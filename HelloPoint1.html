@@ -18,6 +18,7 @@
     <button type = "button" id ="triButton">Triangle</button>
     <button type = "button" id ="pointButton">Point</button>
     <button type = "button" id ="circleButton">Circle</button>
+    <button type="button" id="kiteFillButton">Add Drawing</button>
 
     <p>
     Red <input type="range" min="0" max = "100" value="100" class="slider" id="redSlide">
@@ -27,6 +28,9 @@
     Blue <input type="range" min="0" max = "100" value="0" class="slider" id="blueSlide">
 
     Size<input type="range" min="5" max = "40" value="5" class="slider" id="sizeSlide">
+
+    Segments<input type="range" min="3" max="60" value="10" class="slider" id="segmentSlide">
+    <span id="segmentVal">10</span>
 
     <script src="lib/webgl-utils.js"></script>
     <script src="lib/webgl-debug.js"></script>

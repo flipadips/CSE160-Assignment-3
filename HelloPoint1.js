@@ -73,6 +73,7 @@ const CIRCLE = 2;
 let g_selectedColor = [1.0, 1.0, 1.0, 1.0];
 let g_SelectedSize = 5;
 let g_selectedType = POINT;
+let g_selectedSegments = 10;
 
 function AddActionsForHtmlUI() {
   document.getElementById('Green').onclick = function() {g_selectedColor = [0.0, 1.0, 0.0, 1.0]; };
@@ -86,7 +87,16 @@ function AddActionsForHtmlUI() {
   document.getElementById('sizeSlide').addEventListener('mouseup', function() {g_SelectedSize = this.value;});
   document.getElementById('pointButton').onclick = function() {g_selectedType=POINT};
   document.getElementById('triButton').onclick = function() {g_selectedType=TRIANGLE};
-    document.getElementById('circleButton').onclick = function() {g_selectedType=CIRCLE};
+  document.getElementById('circleButton').onclick = function() {g_selectedType=CIRCLE};
+  const segSlide = document.getElementById('segmentSlide');
+  const segVal = document.getElementById('segmentVal');
+
+  segSlide.addEventListener('input', function () {g_selectedSegments = parseInt(this.value);
+    segVal.innerHTML = this.value;
+  });
+
+  document.getElementById('kiteFillButton').onclick = function() { addKiteFilledOnly(); };
+
 }
 
 function main() {
@@ -116,6 +126,7 @@ function click(ev) {
     point = new Triangle();
   } else {
     point = new Circle();
+    point.segments = g_selectedSegments;
   }
   point.position = [x, y];
   point.color = g_selectedColor.slice();
@@ -165,3 +176,129 @@ function sendTextToHtml(text, htmlID){
   }
   htmlElm.innerHTML = text;
 }
+
+let g_customTriBuffer = null;
+
+function drawCustomTriangle(verts6) {
+  // verts6 = [x1,y1, x2,y2, x3,y3]
+  if (!g_customTriBuffer) {
+    g_customTriBuffer = gl.createBuffer();
+    if (!g_customTriBuffer) {
+      console.log("Failed to create buffer for custom triangles");
+      return;
+    }
+  }
+  // https://developer.mozilla.org/en-US/docs/Web/API/WebGLRenderingContext/bindBuffer
+  gl.bindBuffer(gl.ARRAY_BUFFER, g_customTriBuffer);
+  // https://developer.mozilla.org/en-US/docs/Web/API/WebGLRenderingContext/bufferData
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts6), gl.DYNAMIC_DRAW);
+
+  // https://developer.mozilla.org/en-US/docs/Web/API/WebGLRenderingContext/vertexAttribPointer
+  gl.vertexAttribPointer(a_Position, 2, gl.FLOAT, false, 0, 0);
+  // https://developer.mozilla.org/en-US/docs/Web/API/WebGLRenderingContext/enableVertexAttribArray
+  gl.enableVertexAttribArray(a_Position);
+
+  // https://developer.mozilla.org/en-US/docs/Web/API/WebGLRenderingContext/drawArrays
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+// this function help written with chatGPT
+function pushColoredTri(verts6, rgba) {
+  g_shapesList.push({
+    type: "customTri",
+    verts: verts6,
+    color: rgba.slice(),
+    render: function () {
+      gl.uniform4f(u_FragColor, this.color[0], this.color[1], this.color[2], this.color[3]);
+      drawCustomTriangle(this.verts);
+    }
+  });
+}
+
+function addKiteFilledOnly() {
+  // i tried to color match the best i could:(
+  const YELLOW = [1.0, 1.0, 0.5, 1.0];
+  const CYAN   = [0.5, 1.0, 1.0, 1.0];
+  const PINK   = [1.0, 0.5, 0.5, 1.0];
+  // used numbersof triangles through trial and error
+  const top    = [ 0.00,  0.80];
+  const left   = [-0.65,  0.20];
+  const right  = [ 0.65,  0.20];
+  const bottom = [ 0.00, -0.35];
+
+  const center = [0.00, 0.20];
+
+  // top left triangle
+  pushColoredTri([top[0],top[1], left[0],left[1], center[0],center[1]], YELLOW);
+  // bottom left triangle
+  pushColoredTri([left[0],left[1], bottom[0],bottom[1], center[0],center[1]], YELLOW);
+
+  // top right triangle
+  pushColoredTri([top[0],top[1], center[0],center[1], right[0],right[1]], CYAN);
+  // bottom right triangle
+  pushColoredTri([center[0],center[1], bottom[0],bottom[1], right[0],right[1]], CYAN);
+
+  // smaller triangle on bottom
+  const sTop    = [0.00, -0.45];
+  const sLeft   = [-0.25, -0.65];
+  const sRight  = [0.25, -0.65];
+  const sBottom = [0.00, -0.85];
+  const sCenter = [0.00, -0.65];
+
+  // 4 triangles to fill the bottom
+  pushColoredTri([sTop[0],sTop[1], sLeft[0],sLeft[1], sCenter[0],sCenter[1]], PINK);
+  pushColoredTri([sTop[0],sTop[1], sCenter[0],sCenter[1], sRight[0],sRight[1]], PINK);
+  pushColoredTri([sBottom[0],sBottom[1], sLeft[0],sLeft[1], sCenter[0],sCenter[1]], PINK);
+  pushColoredTri([sBottom[0],sBottom[1], sCenter[0],sCenter[1], sRight[0],sRight[1]], PINK);
+  const t = 0.1;
+  const baseY = 0.05;
+  const topY2 = 0.50;
+
+  // Helper: one "stroke" = one triangle wedge from p1->p2 with thickness t
+  function strokeTri(p1, p2, thick, col) {
+    const x1 = p1[0], y1 = p1[1];
+    const x2 = p2[0], y2 = p2[1];
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.sqrt(dx*dx + dy*dy);
+    if (len === 0) return;
+
+    // perpendicular unit
+    const px = -dy / len;
+    const py =  dx / len;
+
+    // make a skinny triangle: p1, p2, and p1 shifted perpendicular
+    const x3 = x1 + px * thick;
+    const y3 = y1 + py * thick;
+
+    pushColoredTri([x1, y1, x2, y2, x3, y3], col);
+  }
+
+  const rL = -0.45;
+  const rR = -0.15;
+  const rMidY = 0.35;
+
+  strokeTri([rL, baseY], [rL, topY2], t, CYAN);
+  strokeTri([rL, topY2], [rR, topY2], t, CYAN);
+  strokeTri([rL, rMidY], [rR - 0.05, rMidY], t, CYAN);
+  strokeTri([rR, topY2], [rR, rMidY], t, CYAN);
+  strokeTri([rL + 0.05, rMidY], [rR, baseY], t, CYAN);
+
+  const wL = 0.10;
+  const wR = 0.50;
+  const wTop = topY2;
+  const wBot1 = baseY;
+  const wBot2 = baseY;
+
+  const wDip1 = [0.20, wBot1];
+  const wPeak = [0.30, wTop];
+  const wDip2 = [0.40, wBot2];
+
+  strokeTri([wL, wTop], wDip1, t, YELLOW);
+  strokeTri(wDip1, wPeak, t, YELLOW);
+  strokeTri(wPeak, wDip2, t, YELLOW);
+  strokeTri(wDip2, [wR, wTop], t, YELLOW);
+
+  renderAllShapes();
+}
+
+
