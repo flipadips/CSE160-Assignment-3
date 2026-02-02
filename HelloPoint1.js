@@ -1,15 +1,13 @@
-// ColoredPoint.js (c) 2012 matsuda
+ // ColoredPoint.js (c) 2012 matsuda
 // Vertex shader program
 var VSHADER_SOURCE = `
   attribute vec4 a_Position;
-  uniform float u_Size;
+  uniform mat4 u_ModelMatrix;
+  uniform mat4 u_GlobalRotateMatrix;
   void main() {
-    gl_Position = a_Position;
-    //gl_PointSize = 10.0;
-    gl_PointSize = u_Size;
+    gl_Position = u_GlobalRotateMatrix * u_ModelMatrix * a_Position;
   }`
 
-// Fragment shader program
 var FSHADER_SOURCE =`
   precision mediump float;
   uniform vec4 u_FragColor;
@@ -22,7 +20,40 @@ let canvas;
 let gl;
 let a_Position;
 let u_FragColor;
-let u_Size;
+// \\let u_Size;
+let u_ModelMatrix;
+let u_GlobalRotateMatrix;
+// let g_globalAngle = 0;
+let g_globalAngle = 0;
+let g_globalAngleX = 0;
+let g_globalAngleY = 0;
+
+// Poke animation variables
+let g_pokeAnimation = false;
+let g_pokeStartTime = 0;
+
+// Save pose so we can return smoothly after the poke
+let g_pokeSavedYellow = 0;
+let g_pokeSavedWingTip = 0;
+let g_pokeSavedWingFeather = 0;
+
+
+const g_pokeTargetYellow = 90;
+const g_pokeTargetWingTip = 0;
+const g_pokeTargetFeather = 0;
+
+
+const g_pokeRaiseT = 0.25;
+const g_pokeHoldT  = 0.50;
+const g_pokeLowerT = 0.25;
+
+// Helpers
+function clamp01(x) { return Math.max(0, Math.min(1, x)); }
+function lerp(a, b, t) { return a + (b - a) * t; }
+function smoothstep01(t) {
+  t = clamp01(t);
+  return t * t * (3 - 2 * t);
+}
 
 function setUpWebGL() {
     // Retrieve <canvas> element
@@ -35,8 +66,8 @@ function setUpWebGL() {
     console.log('Failed to get the rendering context for WebGL');
     return;
   }
+  gl.enable(gl.DEPTH_TEST);
 }
-
 function connectVariablesToGLSL() {
     // Initialize shaders
   if (!initShaders(gl, VSHADER_SOURCE, FSHADER_SOURCE)) {
@@ -58,11 +89,26 @@ function connectVariablesToGLSL() {
     return;
   }
 
-  u_Size = gl.getUniformLocation(gl.program, 'u_Size');
-  if(!u_Size) {
-    console.log('Failed to get the storage location of u_Size');
+  u_ModelMatrix = gl.getUniformLocation(gl.program, 'u_ModelMatrix');
+  if(!u_ModelMatrix){
+    console.log('Failed to get the storage location of u_ModelMatrix');
     return;
   }
+
+  // u_Size = gl.getUniformLocation(gl.program, 'u_Size');
+  // if(!u_Size) {
+  //  console.log('Failed to get the storage location of u_Size');
+  //  return;
+  // }
+
+  u_GlobalRotateMatrix = gl.getUniformLocation(gl.program, 'u_GlobalRotateMatrix');
+  if(!u_GlobalRotateMatrix) {
+    console.log('Failed to get the storage location of u_GlobalRotateMatrix');
+    return;
+  }
+
+  var identityM = new Matrix4();
+  gl.uniformMatrix4fv(u_ModelMatrix, false, identityM.elements);
 }
 
 const POINT = 0;
@@ -74,12 +120,21 @@ let g_selectedColor = [1.0, 1.0, 1.0, 1.0];
 let g_SelectedSize = 5;
 let g_selectedType = POINT;
 let g_selectedSegments = 10;
+let g_yellowAngle = 0;
+let g_yellowAnimation = false;
+let g_wingTipAngle = 0;
+let g_wingTipAnimation = false
+let g_wingFeatherAngle = 0;
+let g_wingFeatherAnimation = false;
 
 function AddActionsForHtmlUI() {
   document.getElementById('Green').onclick = function() {g_selectedColor = [0.0, 1.0, 0.0, 1.0]; };
   document.getElementById('Red').onclick = function() {g_selectedColor = [1.0, 0.0, 0.0, 1.0]; };
   document.getElementById('clearButton').onclick = function() {g_shapesList = []; renderAllShapes()};
-
+  
+  document.getElementById('animationYellowOnButton').onclick = function() {g_yellowAnimation = true;};
+  document.getElementById('animationYellowOffButton').onclick = function() {g_yellowAnimation = false};
+  
   document.getElementById('redSlide').addEventListener('mouseup', function() {g_selectedColor[0] = this.value/100;});
   document.getElementById('greenSlide').addEventListener('mouseup', function() {g_selectedColor[1] = this.value/100;});
   document.getElementById('blueSlide').addEventListener('mouseup', function() {g_selectedColor[2] = this.value/100;});
@@ -88,6 +143,17 @@ function AddActionsForHtmlUI() {
   document.getElementById('pointButton').onclick = function() {g_selectedType=POINT};
   document.getElementById('triButton').onclick = function() {g_selectedType=TRIANGLE};
   document.getElementById('circleButton').onclick = function() {g_selectedType=CIRCLE};
+  document.getElementById('angleSlide').addEventListener('mousemove', function() {g_globalAngle = this.value; renderAllShapes();});
+  document.getElementById('yellowSlide').addEventListener('mousemove', function() {g_yellowAngle = this.value; renderAllShapes();});
+
+  document.getElementById('animationWingTipOnButton').onclick = function() {g_wingTipAnimation = true;};
+  document.getElementById('animationWingTipOffButton').onclick = function() {g_wingTipAnimation = false};
+  document.getElementById('wingTipSlide').addEventListener('mousemove', function() {g_wingTipAngle = this.value; renderAllShapes();});
+
+  document.getElementById('animationWingFeatherOnButton').onclick = function() {g_wingFeatherAnimation = true;};
+  document.getElementById('animationWingFeatherOffButton').onclick = function() {g_wingFeatherAnimation = false};
+  document.getElementById('wingFeatherSlide').addEventListener('mousemove', function() {g_wingFeatherAngle = this.value; renderAllShapes();});
+
   const segSlide = document.getElementById('segmentSlide');
   const segVal = document.getElementById('segmentVal');
 
@@ -104,15 +170,102 @@ function main() {
   setUpWebGL();
   connectVariablesToGLSL();
   AddActionsForHtmlUI();
-  // Register function (event handler) to be called on a mouse press
-  canvas.onmousedown = click;
-  canvas.onmousemove = function(ev) {if(ev.buttons == 1) {click(ev)}};
+  
+  // mouse rotation control
+  canvas.onmousemove = function(ev) {
+    if(ev.buttons == 1) {
+      if(ev.shiftKey) {
+        // shift click for post animation
+      } else {
+        let rect = ev.target.getBoundingClientRect();
+        let x = ev.clientX - rect.left;
+        let y = ev.clientY - rect.top;
+        
+        // Map mouse position to rotation angles
+        g_globalAngleY = ((x / canvas.width) - 0.5) * 360;
+        g_globalAngleX = ((y / canvas.height) - 0.5) * 360;
+        
+        renderAllShapes();
+      }
+    }
+  };
+  
+  // poke animation on shift click
+canvas.onmousedown = function(ev) {
+  if (ev.shiftKey) {
+    // save the current pose so we can raise from it and return to it
+    g_pokeSavedYellow = Number(g_yellowAngle);
+    g_pokeSavedWingTip = Number(g_wingTipAngle);
+    g_pokeSavedWingFeather = Number(g_wingFeatherAngle);
 
-  // Specify the color for clearing <canvas>
+    // start/restart animation
+    g_pokeAnimation = true;
+    g_pokeStartTime = performance.now() / 1000.0;
+  }
+};
+
   gl.clearColor(0.0, 0.0, 0.0, 1.0);
-
-  // Clear <canvas>
   gl.clear(gl.COLOR_BUFFER_BIT);
+  requestAnimationFrame(tick);
+}
+
+var g_startTime = performance.now()/1000.0;
+var g_seconds = performance.now()/1000.0-g_startTime;
+
+function tick(){
+  g_seconds = performance.now()/1000.0-g_startTime;
+  updateAnimationAngles();
+  // console.log(g_seconds);
+  renderAllShapes();
+  requestAnimationFrame(tick);
+}
+
+function updateAnimationAngles(){
+  if(g_yellowAnimation){
+    g_yellowAngle = (45*Math.sin(g_seconds));    
+  }
+  if(g_wingTipAnimation){
+    g_wingTipAngle = (45*Math.sin(g_seconds * 2));
+  }
+  if(g_wingFeatherAnimation){
+    g_wingFeatherAngle = (30*Math.sin(g_seconds * 3));
+  }
+  
+  // poke animation - wings do directly up and then go down
+if (g_pokeAnimation) {
+  const t = g_seconds - g_pokeStartTime;
+  const total = g_pokeRaiseT + g_pokeHoldT + g_pokeLowerT;
+
+  if (t < g_pokeRaiseT) {
+    // raise the arms
+    const a = smoothstep01(t / g_pokeRaiseT);
+    g_yellowAngle = lerp(g_pokeSavedYellow, g_pokeTargetYellow,  a);
+    g_wingTipAngle = lerp(g_pokeSavedWingTip, g_pokeTargetWingTip, a);
+    g_wingFeatherAngle = lerp(g_pokeSavedWingFeather, g_pokeTargetFeather, a);
+
+  } else if (t < g_pokeRaiseT + g_pokeHoldT) {
+    // hold at top
+    g_yellowAngle = g_pokeTargetYellow;
+    g_wingTipAngle = g_pokeTargetWingTip;
+    g_wingFeatherAngle = g_pokeTargetFeather;
+
+  } else if (t < total) {
+    // lower the arms
+    const downT = (t - (g_pokeRaiseT + g_pokeHoldT)) / g_pokeLowerT;
+    const a = smoothstep01(downT);
+    g_yellowAngle = lerp(g_pokeTargetYellow,  g_pokeSavedYellow, a);
+    g_wingTipAngle = lerp(g_pokeTargetWingTip, g_pokeSavedWingTip, a);
+    g_wingFeatherAngle = lerp(g_pokeTargetFeather, g_pokeSavedWingFeather, a);
+
+  } else {
+    // restore original pose
+    g_pokeAnimation = false;
+
+    if (!g_yellowAnimation) g_yellowAngle = g_pokeSavedYellow;
+    if (!g_wingTipAnimation) g_wingTipAngle = g_pokeSavedWingTip;
+    if (!g_wingFeatherAnimation) g_wingFeatherAngle = g_pokeSavedWingFeather;
+  }
+}
 }
 
 var g_shapesList = [];
@@ -132,11 +285,6 @@ function click(ev) {
   point.color = g_selectedColor.slice();
   point.size = g_SelectedSize;
   g_shapesList.push(point);
-  // Store the coordinates to g_points array
-  // g_points.push([x, y]);
-  // g_colors.push(g_selectedColor);
-  // g_colors.push(g_selectedColor.slice());
-  // g_sizes.push(g_SelectedSize);
 
   renderAllShapes();
 }
@@ -151,21 +299,187 @@ function convertCoordinatesEventToGL(ev){
   return([x,y]);
 }
 
-
-
 function renderAllShapes() {
   var startTime = performance.now();
-    // Clear <canvas>
-  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  // var globalRotMat = new Matrix4().rotate(g_globalAngle,0,1,0);
+  //gl.uniformMatrix4fv(u_GlobalRotateMatrix, false, globalRotMat.elements);
+  var globalRotMat = new Matrix4();
+  globalRotMat.rotate(g_globalAngleX, 1, 0, 0);
+  globalRotMat.rotate(g_globalAngle + g_globalAngleY, 0, 1, 0);
+  gl.uniformMatrix4fv(u_GlobalRotateMatrix, false, globalRotMat.elements);
 
-  // var len = g_points.length;
-  var len = g_shapesList.length;
-  for(var i = 0; i < len; i++) {
-    g_shapesList[i].render();
-  }
-  var duration = performance.now() - startTime;
-  sendTextToHtml("numdot: " + len + " ms: " + Math.floor(duration) + " fps: " + Math.floor(10000/duration)/10, "numdot");
+  // Create a base matrix for the horizontal eagle orientation
+  var eagleBase = new Matrix4();
+  eagleBase.rotate(45, 1, 0, 0);
+
+  // Eagle colors
+  var brownBody = [0.55, 0.35, 0.2, 1.0];
+  var darkBrown = [0.4, 0.25, 0.15, 1.0];
+  var whiteHead = [0.95, 0.95, 0.9, 1.0];
+  var yellow = [0.95, 0.8, 0.2, 1.0];
+  var black = [0.1, 0.1, 0.1, 1.0];
   
+  // body
+  var body = new Cube();
+  body.color = brownBody;
+  body.matrix = new Matrix4(eagleBase);
+  body.matrix.translate(-0.2, -0.3, -0.15);
+  body.matrix.scale(0.4, 0.6, 0.3);
+  body.render();
+  
+  // head
+  var head = new Cube();
+  head.color = whiteHead;
+  head.matrix = new Matrix4(eagleBase);
+  head.matrix.translate(-0.15, 0.3, -0.125);
+  head.matrix.scale(0.3, 0.3, 0.25);
+  head.render();
+  
+  // beak
+  var beak = new Cube();
+  beak.color = yellow;
+  beak.matrix = new Matrix4(eagleBase);
+  beak.matrix.translate(0, 0.54, 0.15);
+  beak.matrix.scale(0.15, 0.1, 0.15);
+  beak.matrix.translate(-0.5, -0.5, -0.5);
+  beak.render();
+
+  // eyes - uses spheres
+  var leftEye = new Sphere();
+  leftEye.color = black;
+  leftEye.segments = 8;
+  leftEye.matrix = new Matrix4(eagleBase);
+  leftEye.matrix.translate(-0.1, 0.6, 0.15);
+  leftEye.matrix.scale(0.05, 0.05, 0.05);
+  leftEye.matrix.translate(-0.5, -0.5, -0.5);
+  leftEye.render();
+
+  var rightEye = new Sphere();
+  rightEye.color = black;
+  rightEye.segments = 8;
+  rightEye.matrix = new Matrix4(eagleBase);
+  rightEye.matrix.translate(0.14, 0.6, 0.15);
+  rightEye.matrix.scale(0.05, 0.05, 0.05);
+  rightEye.matrix.translate(-0.5, -0.5, -0.5);
+  rightEye.render();
+    
+  // left main wing
+  var leftWing = new Cube();
+  leftWing.color = darkBrown;
+  leftWing.matrix = new Matrix4(eagleBase);
+  leftWing.matrix.translate(-0.2, 0.1, 0);
+  leftWing.matrix.rotate(-g_yellowAngle, 0, 0, 1);
+  var leftWingMatrix = new Matrix4(leftWing.matrix);
+  leftWing.matrix.scale(0.5, 0.15, 0.25);
+  leftWing.matrix.translate(-1, -0.5, -0.5);
+  leftWing.render();
+
+  // .eft secondary wing
+  var leftWingTip = new Cube();
+  leftWingTip.color = brownBody;
+  leftWingTip.matrix = leftWingMatrix;
+  leftWingTip.matrix.translate(-0.5, 0, 0);
+  leftWingTip.matrix.rotate(-g_wingTipAngle, 0, 0, 1);
+  var leftWingTipMatrix = new Matrix4(leftWingTip.matrix);
+  leftWingTip.matrix.scale(0.3, 0.1, 0.2);
+  leftWingTip.matrix.translate(-1, -0.5, -0.5);
+  leftWingTip.render();
+
+  // left third wing (feather)
+  leftWingFeather.matrix = leftWingTipMatrix;
+  leftWingFeather.matrix.translate(-0.3, 0, 0);
+  leftWingFeather.matrix.rotate(-g_wingFeatherAngle, 0, 0, 1);
+  leftWingFeather.matrix.scale(0.2, 0.08, 0.15);
+  leftWingFeather.matrix.translate(-1, -0.5, -0.5);
+  leftWingFeather.render();
+
+  // right main wing
+  var rightWing = new Cube();
+  rightWing.color = darkBrown;
+  rightWing.matrix = new Matrix4(eagleBase);
+  rightWing.matrix.translate(0.2, 0.1, 0);
+  rightWing.matrix.rotate(g_yellowAngle, 0, 0, 1);
+  var rightWingMatrix = new Matrix4(rightWing.matrix);
+  rightWing.matrix.scale(0.5, 0.15, 0.25);
+  rightWing.matrix.translate(0, -0.5, -0.5);
+  rightWing.render();
+
+  // right wing secondary
+  var rightWingTip = new Cube();
+  rightWingTip.color = brownBody;
+  rightWingTip.matrix = rightWingMatrix;
+  rightWingTip.matrix.translate(0.5, 0, 0);
+  rightWingTip.matrix.rotate(g_wingTipAngle, 0, 0, 1);
+  var rightWingTipMatrix = new Matrix4(rightWingTip.matrix);
+  rightWingTip.matrix.scale(0.3, 0.1, 0.2);
+  rightWingTip.matrix.translate(0, -0.5, -0.5);
+  rightWingTip.render();
+
+  // right wing thrid (feather)
+  var rightWingFeather = new Cube();
+  rightWingFeather.color = [0.3, 0.2, 0.1, 1.0];
+  rightWingFeather.matrix = rightWingTipMatrix;
+  rightWingFeather.matrix.translate(0.3, 0, 0);
+  rightWingFeather.matrix.rotate(g_wingFeatherAngle, 0, 0, 1);
+  rightWingFeather.matrix.scale(0.2, 0.08, 0.15);
+  rightWingFeather.matrix.translate(0, -0.5, -0.5);
+  rightWingFeather.render();
+    
+  // tail first part
+  var tail = new Cube();
+  tail.color = darkBrown;
+  tail.matrix = new Matrix4(eagleBase);
+  tail.matrix.translate(0, -0.3, -0.15);
+  tail.matrix.rotate(45, 1, 0, 0);
+  tail.matrix.scale(0.35, 0.3, 0.15);
+  tail.matrix.translate(-0.5, -0.5, -0.5);
+  tail.render();
+
+  // tail fan
+  var tailFan = new Cube();
+  tailFan.color = brownBody;
+  tailFan.matrix = new Matrix4(eagleBase);
+  tailFan.matrix.translate(0, -0.45, -0.3);
+  tailFan.matrix.rotate(45, 1, 0, 0);
+  tailFan.matrix.scale(0.5, 0.15, 0.1);
+  tailFan.matrix.translate(-0.5, -0.5, -0.5);
+  tailFan.render();
+
+  // legs
+  var leftLeg = new Cube();
+  leftLeg.color = yellow;
+  leftLeg.matrix = new Matrix4(eagleBase);
+  leftLeg.matrix.translate(-0.1, -0.40, 0);
+  leftLeg.matrix.scale(0.08, 0.3, 0.08);
+  leftLeg.matrix.translate(-0.5, -0.5, -0.5);
+  leftLeg.render();
+
+  var rightLeg = new Cube();
+  rightLeg.color = yellow;
+  rightLeg.matrix = new Matrix4(eagleBase);
+  rightLeg.matrix.translate(0.1, -0.40, 0);
+  rightLeg.matrix.scale(0.08, 0.3, 0.08);
+  rightLeg.matrix.translate(-0.5, -0.5, -0.5);
+  rightLeg.render();
+
+  // claws (talons/feet)
+  var leftTalon = new Cube();
+  leftTalon.color = darkBrown;
+  leftTalon.matrix = new Matrix4(eagleBase);
+  leftTalon.matrix.translate(-0.1, -0.55, 0.05);
+  leftTalon.matrix.scale(0.12, 0.05, 0.15);
+  leftTalon.matrix.translate(-0.5, -0.5, -0.5);
+  leftTalon.render();
+
+  var rightTalon = new Cube();
+  rightTalon.color = darkBrown;
+  rightTalon.matrix = new Matrix4(eagleBase);
+  rightTalon.matrix.translate(0.1, -0.55, 0.05);
+  rightTalon.matrix.scale(0.12, 0.05, 0.15);
+  rightTalon.matrix.translate(-0.5, -0.5, -0.5);
+  rightTalon.render();
+
 }
 
 function sendTextToHtml(text, htmlID){

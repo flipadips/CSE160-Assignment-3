@@ -1,6 +1,24 @@
 RYAN WONG
 ryrwong@ucsc.edu
 
+For assignment 2:
+Generated lines of code for helping create the custom poke animation, speicfically these lines:
+
+function clamp01(x) { return Math.max(0, Math.min(1, x)); }
+function lerp(a, b, t) { return a + (b - a) * t; }
+function smoothstep01(t) {
+  t = clamp01(t);
+  return t * t * (3 - 2 * t);
+}
+
+Also used ChatGPT for helping with the math when drawing the spheres, and adjusting camera angles.
+  let rect = ev.target.getBoundingClientRect();
+  let x = ev.clientX - rect.left;
+  let y = ev.clientY - rect.top;
+
+
+
+
 THE ASSIGNMENT IS DONE IN HelloPoint1.html and HelloPoint1.js
 
 For most of the assignment, I followed the video tutorials. 
