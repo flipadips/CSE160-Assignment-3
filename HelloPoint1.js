@@ -386,7 +386,9 @@ function renderAllShapes() {
   leftWingTip.matrix.translate(-1, -0.5, -0.5);
   leftWingTip.render();
 
-  // left third wing (feather)
+  // left wing secondary
+  var leftWingFeather = new Cube();
+  leftWingFeather.color = [0.3, 0.2, 0.1, 1.0];
   leftWingFeather.matrix = leftWingTipMatrix;
   leftWingFeather.matrix.translate(-0.3, 0, 0);
   leftWingFeather.matrix.rotate(-g_wingFeatherAngle, 0, 0, 1);
@@ -394,7 +396,7 @@ function renderAllShapes() {
   leftWingFeather.matrix.translate(-1, -0.5, -0.5);
   leftWingFeather.render();
 
-  // right main wing
+  // right wing main
   var rightWing = new Cube();
   rightWing.color = darkBrown;
   rightWing.matrix = new Matrix4(eagleBase);
@@ -416,7 +418,7 @@ function renderAllShapes() {
   rightWingTip.matrix.translate(0, -0.5, -0.5);
   rightWingTip.render();
 
-  // right wing thrid (feather)
+  // right wing feathers
   var rightWingFeather = new Cube();
   rightWingFeather.color = [0.3, 0.2, 0.1, 1.0];
   rightWingFeather.matrix = rightWingTipMatrix;
@@ -426,7 +428,7 @@ function renderAllShapes() {
   rightWingFeather.matrix.translate(0, -0.5, -0.5);
   rightWingFeather.render();
     
-  // tail first part
+  // main tail part
   var tail = new Cube();
   tail.color = darkBrown;
   tail.matrix = new Matrix4(eagleBase);
@@ -436,7 +438,7 @@ function renderAllShapes() {
   tail.matrix.translate(-0.5, -0.5, -0.5);
   tail.render();
 
-  // tail fan
+  // outer part of the tail
   var tailFan = new Cube();
   tailFan.color = brownBody;
   tailFan.matrix = new Matrix4(eagleBase);
@@ -463,7 +465,7 @@ function renderAllShapes() {
   rightLeg.matrix.translate(-0.5, -0.5, -0.5);
   rightLeg.render();
 
-  // claws (talons/feet)
+  // feet (talons)
   var leftTalon = new Cube();
   leftTalon.color = darkBrown;
   leftTalon.matrix = new Matrix4(eagleBase);
