@@ -1,6 +1,9 @@
 RYAN WONG
 ryrwong@ucsc.edu
 
+For Assingment 3:
+Used ChatGPT and mainly gemini for restructing many of the code, and helping with the effciency. Furthermore, helped with creating the buttons on the front page for HTML, and how to chooose the block/texture to place.
+
 For assignment 2:
 Generated lines of code for helping create the custom poke animation, speicfically these lines:
 
@@ -16,7 +19,10 @@ Also used ChatGPT for helping with the math when drawing the spheres, and adjust
   let x = ev.clientX - rect.left;
   let y = ev.clientY - rect.top;
 
+    const downT = (t - (g_pokeRaiseT + g_pokeHoldT)) / g_pokeLowerT;
+    const a = smoothstep01(t / g_pokeRaiseT);
 
+Turn on all animations to enable the smooth ones
 
 
 THE ASSIGNMENT IS DONE IN HelloPoint1.html and HelloPoint1.js
